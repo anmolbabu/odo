@@ -74,6 +74,7 @@ func getOdoConfigFile() (string, error) {
 
 func New() (*ConfigInfo, error) {
 	configFile, err := getOdoConfigFile()
+	fmt.Println("The config file is %s\n", configFile)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get odo config file")
 	}

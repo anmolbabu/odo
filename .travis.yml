@@ -74,11 +74,13 @@ jobs:
         - gem install fpm
         - sudo apt-get -qq update
         - sudo apt-get install -y rpm
+        - ./odo version
+        - cat $HOME/.kube/odo
         # Ideally following commands should be in before_deploy section
         # but travis-ci runs before_deploy for every provider. We don't want that.
-        - make prepare-release
-        - ./scripts/generate-bintray-json.sh
-        - make packages
+        #- make prepare-release
+        #- ./scripts/generate-bintray-json.sh
+        #- make packages
       script: skip
       deploy:
         # upload binaries to bintray
