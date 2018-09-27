@@ -81,19 +81,10 @@ jobs:
         - make packages
       script: skip
       deploy:
-        # upload binaries to bintray
-        - provider: bintray
-          repo: odo/odo
-          file: ./.bintray.json
-          user: $BINTRAY_USER
-          key: $BINTRAY_KEY
-          skip_cleanup: true
-          on:
-            on: master
         # upload gziped binaries to github release page
         - provider: releases
           api_key:
-            secure: GGP7Kk+ZjhwwOTOgY4/TufeZ82Xh6SQDJkUlig6qzOCd01Rh80waWz5X0MzNgf2UotjeiVpgFbhZ3DOeUDwkRxa+/MmmiX+gxgeS+tb5YnhnFzH0Q/13DYFF+RQQrr8jmFs7d4dm56L3U3gW4qFwyHgn9Fy5Aqsd4R4RmObV4sVtxh1Z4g4px1hJNiaKFd7T9ChFPS/fuSz75ThrSQjG4rJFWW5Sb6BPmEOkwMCGAc+b24oEZngq8HMDknuKLU1UTSOef9T9yo65M4uVVMI1RkmbmazObkd6216L7XlIvZrLhINIy3Jl7RCtT2JLgKEmHQ9582WIenRIm4PerlMn6sDHmfb+oYW2JMXhgYEOBzXk0K/RmiRGc8tCpSfEpB5qe6z28+l8SvirX9plBqZytG0EwXUVEt7qwSOlLtfrT/4tJCVpmmXDoJR/TtDrHe2HqsBTBQJpYDrOemqmEAcDDMFVG+yZq4iO+Z1jTdEqUMXUE+0UYl22//Y3+xGzvS+JEIzwU/VI2Sg+zDlTvkogQBl7IQqNl/ttXgLcRl0V/E2PpJR/gJUlEyYImKI3Gh4pV5cY7IRuT17fytp249KyK/q3mkE85/yKWPZc/fGVgqbqL7pdHTuVg/woDv46kK1VFC2lDB9Ll5yWrMGI6U/kxO8bzPa88PE0Z4i4yMoRRLo=
+            secure: VOq00DxqTlE08SvDuza+WT3h5g4q2CFnJqek34ZlLzj/8/AjiuDrLgqunvTAil0jIILMBRUZGYJvWdNZfuHSUXo9MlE3kSfsY6XY1KxN6dmzKgAAQtn/OD7ldXpAyYLIOrfGihL5gFeqyB1h9vMrs2Qwzae4+Uh7yDq1XVDyUWgvsEOG9x3WTDvluIYDA9ug0wW672DImIIyq8klKkjXFtg+lPM2q1g5f+HxtALNzgZ4RCwlPoF1vKFgWu2MHtauFs9RzlLMhsa20/3cI8vmh1DdmngLr+vaKZI8pFMOvFFAojhKc/DwUG25lfp9tDb9OlhAhkzyAeFhQOgN25pMaT35FwNMn4waD/vgAVzdZMmK2o1jV0QMUyyRVB1qBxfRivVSSlWvfghmYSc4eVhmRKprhrZsksHjEiZMkWFKyEswN7dCZBkoeQMOcjjnZXDG7JjohbMt1DeggPScNG+NdLSHFsJJLL62YzzpZjC2sFAenFbp/XrrXdfQNZMYhMouNbEoV4gBEhHzqD1IszXCPApvmm76l4m1qeFF6TcQAdOyTPF+EbIDxaiuVTo2yGxAL+EAs8rz8j29i2hqNiFLz52xJSHiZu7x1653C+H69tnvfa7MW6JDvA5B/0OFkjWVqkykGiXx1FsFMx4reQERfJkGG6zbABJvyF/DXqD4sVs=
           draft: true
           prerelease: true
           file_glob: true
@@ -101,7 +92,7 @@ jobs:
           skip_cleanup: true
           on:
             tags: true
-            repo: redhat-developer/odo
+            repo: anmolbabu/odo
         # upload packages to bintray repositories
         - provider: script
           skip_cleanup: true
@@ -115,3 +106,12 @@ jobs:
             - make upload-packages
           on:
             branch: master
+        # upload binaries to bintray
+        - provider: bintray
+          repo: odo/odo
+          file: ./.bintray.json
+          user: $BINTRAY_USER
+          key: $BINTRAY_KEY
+          skip_cleanup: true
+          on:
+            on: master
