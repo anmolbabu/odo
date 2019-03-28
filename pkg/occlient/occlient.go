@@ -74,6 +74,7 @@ type CreateArgs struct {
 	SourcePath      string
 	SourceRef       string
 	SourceType      config.SrcType
+	ConfHash        string
 	ImageName       string
 	EnvVars         []string
 	Ports           []string
@@ -152,6 +153,9 @@ const (
 
 	// EnvS2IWorkingDir is an env var to odo-supervisord-image assemble-and-restart.sh to indicate to it the s2i working directory
 	EnvS2IWorkingDir = "ODO_S2I_WORKING_DIR"
+
+	// ComponentSrcTimestamp is a label that indicates the timestamp of component update/creation
+	ComponentSrcTimestamp = "app.kubernetes.io/componentSrcTimestamp"
 )
 
 // S2IPaths is a struct that will hold path to S2I scripts and the protocol indicating access to them, component source/binary paths, artifacts deployments directory
@@ -1525,6 +1529,16 @@ func (c *Client) UpdateDCAnnotations(dcName string, annotations map[string]strin
 	_, err = c.appsClient.DeploymentConfigs(c.Namespace).Update(dc)
 	if err != nil {
 		return errors.Wrapf(err, "unable to uDeploymentConfig config %s", dcName)
+	}
+	return nil
+}
+
+// UpdateComponentSourceTimeStamp updates the DeploymentConfig with time of update of source to component
+func (c *Client) UpdateComponentSourceTimeStamp(dc *appsv1.DeploymentConfig, path string) error {
+	dc.ObjectMeta.Labels[ComponentSrcTimestamp] = metav1.Now().UTC().Format(time.RFC3339)
+	_, err := c.appsClient.DeploymentConfigs(c.Namespace).Update(dc)
+	if err != nil {
+		return errors.Wrapf(err, "unable to update deployment config %s with source update timestamp", dc.ObjectMeta.Name)
 	}
 	return nil
 }

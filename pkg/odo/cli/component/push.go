@@ -46,6 +46,7 @@ type PushOptions struct {
 	sourcePath       string
 	localConfig      *config.LocalConfigInfo
 	componentContext string
+	cmpConfHash      string
 	pushConfig       bool
 	pushSource       bool
 	*genericclioptions.Context
@@ -63,7 +64,6 @@ func NewPushOptions() *PushOptions {
 
 // Complete completes push args
 func (po *PushOptions) Complete(name string, cmd *cobra.Command, args []string) (err error) {
-	po.resolveSrcAndConfigFlags()
 
 	conf, err := config.NewLocalConfigInfo(po.componentContext, false)
 	if err != nil {
@@ -154,7 +154,7 @@ func (po *PushOptions) createCmpIfNotExistsAndApplyCmpConfig(stdout io.Writer) e
 	if !isCmpExists {
 		log.Successf("Creating %s component with name %s", cmpType, cmpName)
 		// Classic case of component creation
-		if err = component.CreateComponent(po.Context.Client, *po.localConfig, po.componentContext, stdout); err != nil {
+		if err = component.CreateComponent(po.Context.Client, *po.localConfig, po.cmpConfHash, po.componentContext, stdout); err != nil {
 			log.Errorf(
 				"Failed to create component with name %s. Please use `odo config view` to view settings used to create component. Error: %+v",
 				cmpName,
@@ -166,7 +166,7 @@ func (po *PushOptions) createCmpIfNotExistsAndApplyCmpConfig(stdout io.Writer) e
 	} else {
 		log.Successf("Applying component settings to component: %v", cmpName)
 		// Apply config
-		err = component.ApplyConfig(po.Context.Client, *po.localConfig, po.componentContext, stdout)
+		err = component.ApplyConfig(po.Context.Client, *po.localConfig, po.cmpConfHash, po.componentContext, stdout)
 		if err != nil {
 			log.Errorf("Failed to update config to component deployed. Error %+v", err)
 			os.Exit(1)
@@ -182,6 +182,8 @@ func (po *PushOptions) Run() (err error) {
 
 	cmpName := po.localConfig.GetName()
 	appName := po.localConfig.GetApplication()
+
+	po.resolveSrcAndConfigFlags()
 
 	err = po.createCmpIfNotExistsAndApplyCmpConfig(stdout)
 	if err != nil {
@@ -250,14 +252,41 @@ func (po *PushOptions) Run() (err error) {
 	return
 }
 
-func (po *PushOptions) resolveSrcAndConfigFlags() {
-	// If neither config nor source flag is passed, update both config and source to the component
+func (po *PushOptions) resolveSrcAndConfigFlags() (err error) {
+	cmpName := po.localConfig.GetName()
+	appName := po.localConfig.GetApplication()
+	// If neither config nor source flag is passed, decide smartly and push only that which changed
 	if !po.pushConfig && !po.pushSource {
-		po.pushConfig = true
-		po.pushSource = true
+
+		// Check smartly if config needs to be updated onto component
+		cmpConfigNewHash, err := po.localConfig.Hash()
+		glog.V(4).Infof("component config hash is %x and client is %+v", cmpConfigNewHash, po.Context)
+		if err != nil {
+			glog.V(4).Infof("failed to push to component %s. Error %v", cmpName, err)
+		}
+		po.cmpConfHash = fmt.Sprintf("%x", cmpConfigNewHash)
+
+		po.pushConfig, err = component.IsUpdateComponentConfig(po.Context.Client, cmpConfigNewHash, cmpName, appName)
+		if err != nil {
+			glog.V(4).Infof("failed to detect smartly whether the config needs to be updated to component %s. Hence, force applying it. Error %v", cmpName, err)
+		}
+
+		// Check smartly if source needs to be updated onto component
+		po.pushSource, err = component.IsUpdateComponentSrc(
+			po.Context.Client,
+			po.localConfig.GetSourceType(),
+			po.localConfig.GetSourceLocation(),
+			po.localConfig.GetName(),
+			po.localConfig.GetApplication(),
+		)
+		if err != nil {
+			glog.V(4).Infof("failed to detect smartly whether to push source or not. Hence, pushing the source. Error : %+v", err)
+		}
 	}
 
 	glog.V(4).Infof("pushConfig: %+v\npushSource: %+v", po.pushConfig, po.pushSource)
+
+	return nil
 }
 
 // NewCmdPush implements the push odo command

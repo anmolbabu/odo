@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -142,6 +143,7 @@ func CreateFromGit(client *occlient.Client, params occlient.CreateArgs) error {
 	// save component type as label
 	labels[componentlabels.ComponentTypeLabel] = imageName
 	labels[componentlabels.ComponentTypeVersion] = imageTag
+	labels[componentlabels.ComponentSettingsHash] = params.ConfHash
 
 	// save source path as annotation
 	annotations := map[string]string{componentSourceURLAnnotation: params.SourcePath}
@@ -226,6 +228,7 @@ func CreateFromPath(client *occlient.Client, params occlient.CreateArgs) error {
 	// save component type as label
 	labels[componentlabels.ComponentTypeLabel] = imageName
 	labels[componentlabels.ComponentTypeVersion] = imageTag
+	labels[componentlabels.ComponentSettingsHash] = params.ConfHash
 
 	// save source path as annotation
 	sourceURL := util.GenFileURL(params.SourcePath)
@@ -342,11 +345,12 @@ func getS2IPaths(podEnvs []corev1.EnvVar) []string {
 //	Parameters:
 //		client: occlient instance
 //		componentConfig: the component configuration that holds all details of component
+//		cmpConfHash: Component settings hash
 //		context: the component context indicating the location of component config and hence its source as well
 //		stdout: io.Writer instance to write output to
 //	Returns:
 //		err: errors if any
-func CreateComponent(client *occlient.Client, componentConfig config.LocalConfigInfo, context string, stdout io.Writer) (err error) {
+func CreateComponent(client *occlient.Client, componentConfig config.LocalConfigInfo, cmpConfHash string, context string, stdout io.Writer) (err error) {
 
 	cmpName := componentConfig.GetName()
 	cmpType := componentConfig.GetType()
@@ -360,6 +364,7 @@ func CreateComponent(client *occlient.Client, componentConfig config.LocalConfig
 		Name:            cmpName,
 		ImageName:       cmpType,
 		ApplicationName: appName,
+		ConfHash:        cmpConfHash,
 	}
 	createArgs.SourceType = cmpSrcType
 	createArgs.SourcePath = componentConfig.GetSourceLocation()
@@ -526,9 +531,9 @@ func ValidateComponentCreateRequest(client *occlient.Client, componentSettings c
 //	componentConfig: Component configuration
 // Returns:
 //	err: Errors if any else nil
-func ApplyConfig(client *occlient.Client, componentConfig config.LocalConfigInfo, context string, stdout io.Writer) (err error) {
+func ApplyConfig(client *occlient.Client, componentConfig config.LocalConfigInfo, cmpConfHash string, context string, stdout io.Writer) (err error) {
 
-	if err = Update(client, componentConfig, componentConfig.GetSourceLocation(), stdout); err != nil {
+	if err = Update(client, componentConfig, cmpConfHash, componentConfig.GetSourceLocation(), stdout); err != nil {
 		return err
 	}
 
@@ -657,6 +662,11 @@ func PushLocal(client *occlient.Client, componentName string, applicationName st
 	}
 
 	s.End(true)
+
+	err = client.UpdateComponentSourceTimeStamp(dc, path)
+	if err != nil {
+		return errors.Wrapf(err, "failed to update component source time for component %s", componentName)
+	}
 
 	return nil
 }
@@ -805,7 +815,7 @@ func GetComponentSource(client *occlient.Client, componentName string, applicati
 //	stdout: io pipe to write logs to
 // Returns:
 //	errors if any
-func Update(client *occlient.Client, componentSettings config.LocalConfigInfo, newSource string, stdout io.Writer) error {
+func Update(client *occlient.Client, componentSettings config.LocalConfigInfo, cmpConfHash string, newSource string, stdout io.Writer) error {
 	// STEP 1. Create the common Object Meta for updating.
 
 	componentName := componentSettings.GetName()
@@ -842,6 +852,7 @@ func Update(client *occlient.Client, componentSettings config.LocalConfigInfo, n
 	labels := componentlabels.GetLabels(componentName, applicationName, true)
 	labels[componentlabels.ComponentTypeLabel] = imageName
 	labels[componentlabels.ComponentTypeVersion] = imageTag
+	labels[componentlabels.ComponentSettingsHash] = cmpConfHash
 
 	// ObjectMetadata are the same for all generated objects
 	// Create common metadata that will be updated throughout all objects.
@@ -1022,6 +1033,74 @@ func Update(client *occlient.Client, componentSettings config.LocalConfigInfo, n
 		}
 	}
 	return nil
+}
+
+// IsUpdateComponentConfig returns if the component settings applied on the component with passed name and application is same as current component settings
+// or returns true even if component does not exist
+func IsUpdateComponentConfig(client *occlient.Client, componentSettingsHash [16]byte, componentName, applicationName string) (bool, error) {
+	// filter according to component and application name
+	selector := fmt.Sprintf("%s=%s,%s=%s", componentlabels.ComponentLabel, componentName, applabels.ApplicationLabel, applicationName)
+	cmpSettingsHash, err := client.GetLabelValues(componentlabels.ComponentSettingsHash, selector)
+	if err != nil {
+		return true, errors.Wrapf(err, "unable to get component settings hash for component %s in app %s", componentName, applicationName)
+	}
+	if len(cmpSettingsHash) < 1 {
+		// failed getting old hash better to update config to be safe
+		return true, errors.Wrapf(err, "unable to find hash of component settings of %s component", componentName)
+	}
+	return cmpSettingsHash[0] != fmt.Sprintf("%x", componentSettingsHash), nil
+}
+
+// IsUpdateComponentSrc returns if the component source is updated post the last source update to component or error if any
+func IsUpdateComponentSrc(client *occlient.Client, cmpSrcType config.SrcType, componentSrcLoc string, componentName, applicationName string) (bool, error) {
+	if cmpSrcType == config.GIT {
+		// For git component, a way to get source update timestamp needs to be found eventually
+		return true, nil
+	}
+
+	// Namespace the application
+	namespacedOpenShiftObject, err := util.NamespaceOpenShiftObject(componentName, applicationName)
+	if err != nil {
+		return true, errors.Wrapf(err, "unable to create namespaced name")
+	}
+
+	deploymentConfig, err := client.GetDeploymentConfigFromName(namespacedOpenShiftObject)
+	if err != nil {
+		return true, errors.Wrapf(err, "unable to get updated time for component %s", componentName)
+	}
+
+	latestCmpSourceUpdateTimestamp, err := getCmpSrcLatestTimestamp(componentSrcLoc)
+	if err != nil {
+		// failed to fetch latest update/modification timestamp of component source location. Better to force update component source
+		return true, nil
+	}
+
+	dcSourceUpdateTS, err := time.Parse(time.RFC3339, deploymentConfig.ObjectMeta.Labels[occlient.ComponentSrcTimestamp])
+	if err != nil {
+		return true, errors.Wrapf(err, "failed to parse component source update time for component %s", componentName)
+	}
+	dcCTS := metav1.NewTime(dcSourceUpdateTS)
+	metav1CmpSourceLatestTime := metav1.NewTime(latestCmpSourceUpdateTimestamp)
+	mvCSLT := &metav1CmpSourceLatestTime
+	return !mvCSLT.Before(&dcCTS), nil
+}
+
+func getCmpSrcLatestTimestamp(componentSrcLoc string) (time.Time, error) {
+	statInfo, err := os.Stat(componentSrcLoc)
+	if err != nil {
+		return time.Now(), errors.Wrapf(err, "unable to get info about %s", componentSrcLoc)
+	}
+
+	latestCmpSrcModTime := statInfo.ModTime()
+
+	filepath.Walk(componentSrcLoc, func(fp string, fi os.FileInfo, err error) error {
+		if fi.ModTime().After(latestCmpSrcModTime) {
+			latestCmpSrcModTime = fi.ModTime()
+		}
+		return nil
+	})
+
+	return latestCmpSrcModTime, nil
 }
 
 // Exists checks whether a component with the given name exists in the current application or not

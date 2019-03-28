@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -285,6 +287,15 @@ func (lci *LocalConfigInfo) writeToFile() error {
 	plc.TypeMeta = lci.typeMeta
 	plc.ComponentSettings = lci.componentSettings
 	return util.WriteToFile(&plc, lci.Filename)
+}
+
+// Hash returns the 16 byte md5 hash of the component settings
+func (lci *LocalConfigInfo) Hash() ([16]byte, error) {
+	jsonConfig, err := json.Marshal(lci.GetComponentSettings())
+	if err != nil {
+		return [16]byte{}, errors.Wrapf(err, "failed to marshal component settings")
+	}
+	return md5.Sum(jsonConfig), nil
 }
 
 // GetType returns type of component (builder image name) in the config

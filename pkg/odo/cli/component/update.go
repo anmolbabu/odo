@@ -107,9 +107,14 @@ func (uo *UpdateOptions) Run() (err error) {
 
 	cmpSrcType := uo.cmpConfig.GetSourceType()
 	cmpName := uo.cmpConfig.GetName()
+	cmpConfigHash, err := uo.cmpConfig.Hash()
+	if err != nil {
+		return errors.Wrapf(err, "failed to compute hash of component settings for component %s", cmpName)
+	}
+	cmpConfigHashStr := fmt.Sprintf("%x", cmpConfigHash)
 
 	if cmpSrcType == config.GIT {
-		if err := component.Update(uo.Context.Client, *uo.cmpConfig, uo.cmpConfig.GetSourceLocation(), stdout); err != nil {
+		if err := component.Update(uo.Context.Client, *uo.cmpConfig, cmpConfigHashStr, uo.cmpConfig.GetSourceLocation(), stdout); err != nil {
 			return err
 		}
 		log.Successf("The component %s was updated successfully", uo.componentName)
@@ -131,7 +136,7 @@ func (uo *UpdateOptions) Run() (err error) {
 		if !fileInfo.IsDir() {
 			return fmt.Errorf("Please provide a path to the directory")
 		}
-		if err = component.Update(uo.Context.Client, *uo.cmpConfig, cmpPath, stdout); err != nil {
+		if err = component.Update(uo.Context.Client, *uo.cmpConfig, cmpConfigHashStr, cmpPath, stdout); err != nil {
 			return err
 		}
 		log.Successf("The component %s was updated successfully, please use 'odo push' to push your local changes", uo.componentName)
@@ -140,7 +145,7 @@ func (uo *UpdateOptions) Run() (err error) {
 		if err != nil {
 			return err
 		}
-		if err = component.Update(uo.Context.Client, *uo.cmpConfig, path, stdout); err != nil {
+		if err = component.Update(uo.Context.Client, *uo.cmpConfig, cmpConfigHashStr, path, stdout); err != nil {
 			return err
 		}
 		log.Successf("The component %s was updated successfully, please use 'odo push' to push your local changes", uo.componentName)
